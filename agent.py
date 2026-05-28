@@ -1,5 +1,5 @@
 """
-ReAct agent (no framework) — Benuron / paracetamol dose calculator.
+ReAct agent (no framework) — Benuron / paracetamol dosage calculator.
 
 Follows the Thought → Action → PAUSE → Observation loop from the
 agent-from-scratch notebook, adapted for pediatric paracetamol dosing.
