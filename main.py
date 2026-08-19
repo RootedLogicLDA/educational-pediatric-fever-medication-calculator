@@ -14,6 +14,14 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Security, status
 from fastapi.security.api_key import APIKeyHeader
 from openai import OpenAI
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.openai import OpenAIInstrumentor
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from pydantic import BaseModel, Field
 
 from agent import run_agent
@@ -25,6 +33,19 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
     datefmt="%H:%M:%S",
 )
+
+# ---------------------------------------------------------------------------
+# OpenTelemetry
+# ---------------------------------------------------------------------------
+
+_otel_provider = TracerProvider(
+    resource=Resource.create({"service.name": "pediatric-fever-calculator"})
+)
+_otel_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(_otel_provider)
+
+OpenAIInstrumentor().instrument(tracer_provider=_otel_provider)
+HTTPXClientInstrumentor().instrument(tracer_provider=_otel_provider)
 
 # ---------------------------------------------------------------------------
 # Config
@@ -52,6 +73,8 @@ app = FastAPI(
     ),
     version="1.0.0",
 )
+
+FastAPIInstrumentor.instrument_app(app, tracer_provider=_otel_provider)
 
 # ---------------------------------------------------------------------------
 # API key authentication
@@ -109,6 +132,14 @@ class AskResponse(BaseModel):
 @app.get("/health", tags=["ops"])
 def health():
     return {"status": "ok"}
+
+
+@app.get("/otel-ping", tags=["ops"])
+def otel_ping():
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span("otel-ping") as span:
+        trace_id = format(span.get_span_context().trace_id, "032x")
+    return {"trace_id": trace_id}
 
 
 @app.post("/ask", response_model=AskResponse, tags=["agent"])
